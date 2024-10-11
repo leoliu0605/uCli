@@ -132,6 +132,15 @@ static void stripTrailingWhiteSpace(unsigned char *cmd);
  * @param argv The argument array.
  */
 static void executeCommand(char **argv);
+
+/**
+ * @brief Default help command to list all registered commands.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ */
+static void helpCommand(int argc, char **argv);
+
 #pragma endregion Private Function Prototypes
 
 #pragma region defines
@@ -207,6 +216,11 @@ static console_io_t *consoleIO;
 void consoleInit(command_t *commands, console_io_t *io) {
     command_t *prev = NULL;
     command_t *curr = NULL;
+
+    // Add help command
+    static command_t helpCmd = {"help", helpCommand, NULL};
+    helpCmd.next             = commands;
+    commands                 = &helpCmd;
 
     commands->next = NULL;
     if (commandList == NULL) {
@@ -506,6 +520,21 @@ static void executeCommand(char **argv) {
 
     if (!found) {
         consoleIO->debug_print("command `%s' not found, try `all help'\r\n", (argc == 0) ? "" : argv[0]);
+    }
+}
+
+/**
+ * @brief Default help command to list all registered commands.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ */
+static void helpCommand(int argc, char **argv) {
+    consoleIO->print("Available commands:\r\n");
+    command_t *currentCommand = commandList;
+    while (currentCommand) {
+        consoleIO->print("  %s\r\n", currentCommand->command);
+        currentCommand = currentCommand->next;
     }
 }
 
