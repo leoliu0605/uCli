@@ -158,6 +158,109 @@ int main(void) {
 }
 ```
 
+### Using with STM32 and UART
+
+To use this console handler with an STM32 MCU and UART, follow these steps:
+
+1. **Initialize UART**: Initialize the UART peripheral in your STM32 project. This can be done using STM32CubeMX or manually in your code.
+
+2. **Implement UART I/O Functions with Interrupts**: Implement the I/O functions to use the STM32 HAL UART functions with interrupts.
+
+```c
+#include "stm32f1xx_hal.h"
+#include "console.h"
+
+extern UART_HandleTypeDef huart1;  // Assuming UART1 is used
+
+// Define a structure for UART receive buffer
+typedef struct {
+    uint8_t buffer[128];          // Buffer to store received data
+    volatile uint16_t head;       // Head index for buffer
+    volatile uint16_t tail;       // Tail index for buffer
+} UART_RxBuffer_t;
+
+#define RX_BUFFER_SIZE 128
+static UART_RxBuffer_t rxBuffer = {{0}, 0, 0};  // Initialize the receive buffer
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART1) {
+        uint16_t nextHead = (rxBuffer.head + 1) % RX_BUFFER_SIZE;
+        if (nextHead != rxBuffer.tail) {
+            rxBuffer.buffer[rxBuffer.head] = huart->Instance->DR;
+            rxBuffer.head = nextHead;
+        }
+        HAL_UART_Receive_IT(&huart1, rxBuffer.buffer + rxBuffer.head, 1);
+    }
+}
+
+void stm32_debug_print(const char *format, ...) {
+    char buffer[128];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
+
+void stm32_print(const char *format, ...) {
+    char buffer[128];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
+
+int stm32_getchar(void) {
+    if (rxBuffer.head == rxBuffer.tail) {
+        return -1;  // No data available
+    } else {
+        uint8_t ch = rxBuffer.buffer[rxBuffer.tail];
+        rxBuffer.tail = (rxBuffer.tail + 1) % RX_BUFFER_SIZE;
+        return ch;
+    }
+}
+
+console_io_t stm32_io = {
+    .debug_print = stm32_debug_print,
+    .print = stm32_print,
+    .getchar = stm32_getchar
+};
+```
+
+3. **Initialize Console**: Initialize the console with the commands and STM32 UART I/O functions.
+
+```c
+#include "console.h"
+
+void helloCommand(int argc, char **argv) {
+    stm32_print("Hello, World!\n");
+}
+
+command_t commands[] = {
+    {"hello", helloCommand, NULL},
+    {NULL, NULL, NULL}  // End of commands
+};
+
+int main(void) {
+    HAL_Init();
+    SystemClock_Config();
+    MX_USART1_UART_Init();
+
+    // Start UART reception in interrupt mode
+    HAL_UART_Receive_IT(&huart1, rxBuffer.buffer + rxBuffer.head, 1);
+
+    consoleInit(commands, &stm32_io);
+
+    while (1) {
+        consoleHandler();
+        // Other main loop logic
+    }
+
+    return 0;
+}
+```
+
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
