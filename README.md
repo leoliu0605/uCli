@@ -20,7 +20,7 @@ This project provides a console command handler for embedded systems, designed t
 
 1. Clone the repository:
     ```sh
-    git clone https://github.com/your-repo/console-command-handler.git
+    git clone https://github.com/leoli0605/embed-console
     ```
 
 2. Include the `console.h` and `console.c` files in your project.
