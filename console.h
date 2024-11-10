@@ -1,8 +1,8 @@
 /**
  * @file console.h
  * @brief Console handling header
- * @version 1.0
- * @date 2024-10-11
+ * @version 1.1
+ * @date 2024-11-10
  */
 
 #ifndef CONSOLE_H
@@ -23,22 +23,50 @@ extern "C" {
 #pragma region typedef
 
 /**
- * @brief Structure representing a command.
- */
-typedef struct command_t {
-    const char *command;                     /**< Command string */
-    void (*function)(int argc, char **argv); /**< Function to execute the command */
-    struct command_t *next;                  /**< Pointer to the next command in the list */
-} command_t;
-
-/**
  * @brief Structure representing console I/O functions.
+ *
+ * @details This structure provides a standardized interface for console operations,
+ * wrapping basic I/O functions like printf and getchar.
+ *
+ * Example usage:
+ * @code
+ * console_io_t console = {
+ *     .debug_print = printf,
+ *     .print = printf,
+ *     .getchar = getchar
+ * };
+ *
+ * console.print("Hello %s\n", "World");
+ * int ch = console.getchar();
+ * @endcode
+ *
+ * @field debug_print Function pointer for debug messages (printf-like format)
+ * @field print Function pointer for normal output (printf-like format)
+ * @field getchar Function pointer for character input
  */
 typedef struct {
     void (*debug_print)(const char *format, ...);
     void (*print)(const char *format, ...);
     int (*getchar)(void);
 } console_io_t;
+
+/**
+ * @brief Structure for command handling
+ *
+ * Example:
+ * @code
+ * command_t cmd = {
+ *   .command = "help",
+ *   .function = help_handler,
+ *   .next = NULL
+ * };
+ * @endcode
+ */
+typedef struct command_t {
+    const char *command;                     /**< Command string */
+    void (*function)(int argc, char **argv); /**< Function to execute the command */
+    struct command_t *next;                  /**< Pointer to the next command in the list */
+} command_t;
 
 #pragma endregion typedef
 
@@ -51,17 +79,7 @@ typedef struct {
 
 #pragma region Exported Functions
 
-/**
- * @brief Initialize the console with a list of commands and I/O functions.
- *
- * @param commands The list of commands.
- * @param io The console I/O functions.
- */
-void consoleInit(command_t *commands, console_io_t *io);
-
-/**
- * @brief Handle console input.
- */
+void consoleInit(const console_io_t *io, const command_t *commands);
 void consoleHandler(void);
 
 #pragma endregion Exported Functions

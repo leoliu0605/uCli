@@ -1,8 +1,8 @@
 /**
  * @file console.c
  * @brief Console handling implementation
- * @version 1.0
- * @date 2024-10-11
+ * @version 1.1
+ * @date 2024-11-10
  */
 
 #include "console.h"
@@ -22,123 +22,20 @@ extern "C" {
 #pragma endregion typedef
 
 #pragma region Private Function Prototypes
-/**
- * @brief Handle backspace key press.
- */
+
 static void handleBackspace(void);
-
-/**
- * @brief Handle enter key press.
- */
 static void handleEnter(void);
-
-/**
- * @brief Handle arrow key press.
- */
 static void handleArrowKey(void);
-
-/**
- * @brief Handle specific arrow key direction.
- *
- * @param historyIndex Pointer to the history index.
- * @param direction Direction of the arrow key (-1 for up, 1 for down).
- */
 static void handleArrow(unsigned int *historyIndex, int direction);
-
-/**
- * @brief Handle printable character input.
- *
- * @param c The input character.
- */
 static void handlePrintableChar(unsigned char c);
-
-/**
- * @brief Flush the command buffer.
- *
- * @param cursorPos Current cursor position.
- * @param cmdBuf Command buffer to flush into.
- * @param cmdSrc Source command buffer.
- * @param cmdLen Length of the command.
- * @return unsigned int
- */
 static unsigned int flushCommandBuffer(unsigned int cursorPos, unsigned char *cmdBuf, unsigned char *cmdSrc, unsigned int cmdLen);
-
-/**
- * @brief Increase the command index.
- *
- * @param cmdIdx Pointer to the command index.
- * @return unsigned int
- */
 static unsigned int increaseCommandIndex(unsigned int *cmdIdx);
-
-/**
- * @brief Duplicate a string.
- *
- * @param str The input string.
- * @return char*
- */
-static char *duplicateString(const char *str);
-
-/**
- * @brief Set arguments from a command string.
- *
- * @param args The command string.
- * @param argv Array to store the arguments.
- * @return int
- */
-static int setArguments(char *args, char **argv);
-
-/**
- * @brief Parse arguments from a command string.
- *
- * @param args The command string.
- * @param argc Pointer to store the argument count.
- * @return char**
- */
-static char **parseArguments(char *args, int *argc);
-
-/**
- * @brief Free parsed arguments.
- *
- * @param argv The argument array.
- */
 static void freeParsedArguments(char **argv);
-
-/**
- * @brief Process a command.
- *
- * @param cmd The command string.
- * @param repeating Whether the command is repeating.
- */
 static void processCommand(unsigned char *cmd, unsigned int repeating);
-
-/**
- * @brief Strip leading white space from a command string.
- *
- * @param cmd The command string.
- */
 static void stripLeadingWhiteSpace(unsigned char *cmd);
-
-/**
- * @brief Strip trailing white space from a command string.
- *
- * @param cmd The command string.
- */
 static void stripTrailingWhiteSpace(unsigned char *cmd);
-
-/**
- * @brief Execute a command.
- *
- * @param argv The argument array.
- */
-static void executeCommand(char **argv);
-
-/**
- * @brief Default help command to list all registered commands.
- *
- * @param argc Argument count.
- * @param argv Argument vector.
- */
+static int parseToArgv(char *cmd, char ***argv);
+static void executeCommand(int argc, char **argv);
 static void helpCommand(int argc, char **argv);
 
 #pragma endregion Private Function Prototypes
@@ -148,92 +45,56 @@ static void helpCommand(int argc, char **argv);
 
 #pragma region variables
 
-/**
- * @brief List of registered commands.
- */
 static command_t *commandList = NULL;
-
-/**
- * @brief Buffer for console input.
- */
 static unsigned char consoleInputBuffer[CONSOLE_BUFFER_SIZE];
-
-/**
- * @brief Current position in the input buffer.
- */
 static unsigned int inputPosition = 0;
-
-/**
- * @brief History of entered commands.
- */
 static unsigned char commandHistory[CONSOLE_HISTORY_LENGTH][CONSOLE_BUFFER_SIZE];
-
-/**
- * @brief Positions of commands in the history.
- */
 static unsigned int historyPosition[CONSOLE_HISTORY_LENGTH];
-
-/**
- * @brief Index for inserting into the history.
- */
 static unsigned int historyInsert;
-
-/**
- * @brief Index for outputting from the history.
- */
 static unsigned int historyOutput;
-
-/**
- * @brief Wrap flag for history insertion.
- */
 static unsigned int historyInsertWrap;
-
-/**
- * @brief Wrap flag for history output.
- */
 static unsigned int historyOutputWrap;
-
-/**
- * @brief Counter for up arrow presses.
- */
 static unsigned int upArrowCount;
-
-/**
- * @brief Console I/O functions.
- */
-static console_io_t *consoleIO;
+static const console_io_t *consoleIO;
 
 #pragma endregion variables
 
 #pragma region External Functions
 
 /**
- * @brief Initialize the console with a list of commands and I/O functions.
+ * @brief Initializes the console with I/O functions and command list
  *
- * @param commands The list of commands.
- * @param io The console I/O functions.
+ * This function initializes the console by setting up the command list and I/O interface.
+ * It automatically adds a "help" command to the beginning of the command list and
+ * sorts the commands in alphabetical order.
+ *
+ * @param io Pointer to console_io_t structure containing I/O function pointers
+ * @param commands Pointer to the first command in the user-defined command list
+ *
+ * @note The function assumes that the command structures are properly initialized
+ * @note The function maintains an alphabetically sorted list of commands
+ * @note A "help" command is automatically added to the command list
  */
-void consoleInit(command_t *commands, console_io_t *io) {
-    command_t *prev = NULL;
-    command_t *curr = NULL;
+void consoleInit(const console_io_t *io, const command_t *commands) {
+    command_t *prev    = NULL;
+    command_t *curr    = NULL;
+    command_t *cmdCopy = (command_t *)commands;
 
     // Add help command
     static command_t helpCmd = {"help", helpCommand, NULL};
-    helpCmd.next             = commands;
-    commands                 = &helpCmd;
+    helpCmd.next             = cmdCopy;
 
-    commands->next = NULL;
     if (commandList == NULL) {
-        commandList = commands;
+        commandList = &helpCmd;
     } else {
         curr = commandList;
         while (curr != NULL) {
-            if (strcmp(commands->command, curr->command) <= 0) {
-                commands->next = curr;
+            if (strcmp(cmdCopy->command, curr->command) <= 0) {
+                cmdCopy->next = curr;
                 if (prev) {
-                    prev->next = commands;
+                    prev->next = cmdCopy;
                 } else {
-                    commandList = commands;
+                    commandList = cmdCopy;
                 }
                 break;
             }
@@ -241,7 +102,7 @@ void consoleInit(command_t *commands, console_io_t *io) {
             curr = curr->next;
         }
         if (curr == NULL) {
-            prev->next = commands;
+            prev->next = cmdCopy;
         }
     }
 
@@ -249,7 +110,18 @@ void consoleInit(command_t *commands, console_io_t *io) {
 }
 
 /**
- * @brief Handle console input.
+ * @brief Console input handler function
+ *
+ * Processes individual characters received from the console input.
+ * Handles special characters including:
+ * - Backspace ('\b' or DEL)
+ * - Enter ('\r')
+ * - Arrow keys (starting with '[')
+ * - Printable characters
+ *
+ * The function reads a single character from consoleIO interface
+ * and routes it to appropriate handler functions based on the
+ * character received.
  */
 void consoleHandler(void) {
     unsigned char c;
@@ -286,7 +158,7 @@ static void handleBackspace(void) {
 static void handleEnter(void) {
     consoleIO->print("\r\n");
     if (inputPosition) {
-        if (strcmp(consoleInputBuffer, commandHistory[historyInsert])) {
+        if (strcmp((const char *)consoleInputBuffer, (const char *)commandHistory[historyInsert])) {
             if (increaseCommandIndex(&historyInsert) == 1) {
                 historyInsertWrap = 1;
             }
@@ -399,73 +271,38 @@ static unsigned int increaseCommandIndex(unsigned int *cmdIdx) {
     return ret;
 }
 
-static char *duplicateString(const char *str) {
-    size_t size;
-    char *copy;
-
-    size = strlen(str) + 1;
-    copy = (char *)malloc(size);
-    if (copy == NULL) {
-        // Error handling
-        consoleIO->debug_print("Memory allocation failed\n");
-        return NULL;
-    }
-    memcpy(copy, str, size);
-    return copy;
-}
-
-static int setArguments(char *args, char **argv) {
-    int count = 0;
-
-    while (isspace(*args)) ++args;
-    while (*args) {
-        if (argv) argv[count] = args;
-        while (*args && !isspace(*args)) ++args;
-        if (argv && *args) *args++ = '\0';
-        while (isspace(*args)) ++args;
-        count++;
-    }
-    return count;
-}
-
-static char **parseArguments(char *args, int *argc) {
-    char **argv  = NULL;
-    int argCount = 0;
-
-    if (args && *args) {
-        args = (char *)duplicateString(args);
-        if (args) {
-            argCount = setArguments(args, NULL);
-            if (argCount) {
-                argv = (char **)malloc((argCount + 1) * sizeof(char *));
-                if (argv) {
-                    *argv++  = args;
-                    argCount = setArguments(args, argv);
-                }
-            }
-        }
-    }
-    if (args && !argv) free(args);
-
-    *argc = argCount;
-    return argv;
-}
-
 static void freeParsedArguments(char **argv) {
     if (argv) {
-        free(argv[-1]);
-        free(argv - 1);
+        free(argv);
     }
 }
 
 static void processCommand(unsigned char *cmd, unsigned int repeating) {
+    (void)repeating;
+
     stripLeadingWhiteSpace(cmd);
     stripTrailingWhiteSpace(cmd);
-    int argc = parseToArgv((char *)cmd, &argv);
-    cmd[idx] = '\0';
+
+    int argc    = 0;
+    char **argv = NULL;
+
+    argc = parseToArgv((char *)cmd, &argv);
+
+    unsigned int idx = 0;
+    while (cmd[idx] != '\0') {
+        if (cmd[idx] == ' ' || cmd[idx] == '\t' || cmd[idx] == '\r' || cmd[idx] == '\n') {
+            cmd[idx] = '\0';
+            break;
+        }
+        idx++;
+    }
 
     if (argc > 0) {
-        executeCommand(argv);
+        executeCommand(argc, argv);
+    } else {
+        if (consoleIO && consoleIO->debug_print) {
+            consoleIO->debug_print("command `%s' not found, try `all help'\r\n", (argc == 0) ? "" : argv[0]);
+        }
     }
 
     if (argv != NULL) {
@@ -494,7 +331,7 @@ static void stripLeadingWhiteSpace(unsigned char *cmd) {
 }
 
 static void stripTrailingWhiteSpace(unsigned char *cmd) {
-    unsigned int idx = strlen(cmd);
+    unsigned int idx = strlen((const char *)cmd);
     while (idx > 0) {
         idx--;
         if (isspace(cmd[idx])) {
@@ -505,7 +342,44 @@ static void stripTrailingWhiteSpace(unsigned char *cmd) {
     }
 }
 
-static void executeCommand(char **argv) {
+static int parseToArgv(char *cmd, char ***argv) {
+    int argc     = 0;
+    int max_args = 10;
+    *argv        = (char **)malloc(max_args * sizeof(char *));
+    if (*argv == NULL) {
+        if (consoleIO && consoleIO->debug_print) {
+            consoleIO->debug_print("Failed to allocate memory for argv\r\n");
+        }
+        return -1;
+    }
+
+    char *token = strtok(cmd, " \t\r\n");
+    while (token != NULL) {
+        if (argc >= max_args) {
+            max_args *= 2;
+            *argv = (char **)realloc(*argv, max_args * sizeof(char *));
+            if (*argv == NULL) {
+                if (consoleIO && consoleIO->debug_print) {
+                    consoleIO->debug_print("Failed to reallocate memory for argv\r\n");
+                }
+                return -1;
+            }
+        }
+
+        (*argv)[argc++] = token;
+        if (consoleIO && consoleIO->debug_print) {
+            consoleIO->debug_print("Parsed argument %d: %s\r\n", argc - 1, token);
+        }
+        token = strtok(NULL, " \t\r\n");
+    }
+
+    if (consoleIO && consoleIO->debug_print) {
+        consoleIO->debug_print("Total arguments parsed: %d\r\n", argc);
+    }
+    return argc;
+}
+
+static void executeCommand(int argc, char **argv) {
     command_t *currentCommand = commandList;
     int found                 = 0;
 
@@ -519,17 +393,32 @@ static void executeCommand(char **argv) {
     }
 
     if (!found) {
-        consoleIO->debug_print("command `%s' not found, try `all help'\r\n", (argc == 0) ? "" : argv[0]);
+        if (consoleIO && consoleIO->debug_print) {
+            consoleIO->debug_print("command `%s' not found, try `all help'\r\n", (argc == 0) ? "" : argv[0]);
+        }
     }
 }
 
 /**
  * @brief Default help command to list all registered commands.
  *
- * @param argc Argument count.
- * @param argv Argument vector.
+ * This function displays a list of all commands that have been registered in the command list.
+ * It iterates through the linked list of commands and prints each command name.
+ * The output is formatted with commands indented by 2 spaces and each on a new line.
+ *
+ * @param argc Number of arguments (unused but required by command handler signature)
+ * @param argv Array of argument strings (unused but required by command handler signature)
+ *
+ * @note Both argc and argv parameters are explicitly void-cast as they are not used
+ *       in the function but are required by the command handler interface.
+ *
+ * @see commandList
+ * @see command_t
+ * @see consoleIO
  */
 static void helpCommand(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
     consoleIO->print("Available commands:\r\n");
     command_t *currentCommand = commandList;
     while (currentCommand) {
