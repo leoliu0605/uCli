@@ -1,8 +1,8 @@
 /**
  * @file console.c
  * @brief Console handling implementation
- * @version 1.1
- * @date 2024-11-10
+ * @version 1.2
+ * @date 2024-11-13
  */
 
 #include "console.h"
@@ -62,51 +62,62 @@ static const console_io_t *consoleIO;
 #pragma region External Functions
 
 /**
- * @brief Initializes the console with I/O functions and command list
+ * @brief Initializes the console with I/O handlers and command list
  *
- * This function initializes the console by setting up the command list and I/O interface.
- * It automatically adds a "help" command to the beginning of the command list and
- * sorts the commands in alphabetical order.
+ * This function initializes the console by setting up the command list and I/O handlers.
+ * It first adds a built-in "help" command, then adds all user-defined commands from the
+ * provided command array. The commands are stored in a linked list structure.
  *
- * @param io Pointer to console_io_t structure containing I/O function pointers
- * @param commands Pointer to the first command in the user-defined command list
+ * @param io Pointer to console_io_t structure containing I/O function handlers
+ * @param commands Pointer to array of command_t structures defining available commands.
+ *                 The array must be NULL-terminated (last command's name must be NULL)
  *
- * @note The function assumes that the command structures are properly initialized
- * @note The function maintains an alphabetically sorted list of commands
- * @note A "help" command is automatically added to the command list
+ * @note This function dynamically allocates memory for each command. If allocation fails,
+ *       the function will return early and print a debug message if debug_print is available.
+ *
+ * @note After initialization, if debug printing is enabled, the function will print
+ *       a list of all available commands.
  */
 void consoleInit(const console_io_t *io, const command_t *commands) {
-    command_t *prev    = NULL;
-    command_t *curr    = NULL;
-    command_t *cmdCopy = (command_t *)commands;
+    const command_t *cmdPtr = commands;
 
-    // Add help command
+    // Add help command first
     static command_t helpCmd = {"help", helpCommand, NULL};
-    helpCmd.next             = cmdCopy;
+    helpCmd.next             = NULL;
+    commandList              = &helpCmd;
+    command_t *lastCmd       = commandList;
 
-    if (commandList == NULL) {
-        commandList = &helpCmd;
-    } else {
-        curr = commandList;
-        while (curr != NULL) {
-            if (strcmp(cmdCopy->command, curr->command) <= 0) {
-                cmdCopy->next = curr;
-                if (prev) {
-                    prev->next = cmdCopy;
-                } else {
-                    commandList = cmdCopy;
-                }
-                break;
+    // Add remaining commands in original order
+    while (cmdPtr && cmdPtr->command != NULL) {
+        command_t *cmdCopy = (command_t *)malloc(sizeof(command_t));
+        if (cmdCopy == NULL) {
+            if (consoleIO && consoleIO->debug_print) {
+                consoleIO->debug_print("Failed to allocate memory for command\r\n");
             }
-            prev = curr;
-            curr = curr->next;
+            return;
         }
-        if (curr == NULL) {
-            prev->next = cmdCopy;
-        }
+        memcpy(cmdCopy, cmdPtr, sizeof(command_t));
+        cmdCopy->next = NULL;
+
+        // Append to end of list
+        lastCmd->next = cmdCopy;
+        lastCmd       = cmdCopy;
+
+        cmdPtr++;
     }
 
     consoleIO = io;
+
+    // Debug print available commands
+    if (io && io->debug_print) {
+        io->debug_print("Available commands:\r\n");
+        command_t *curr = commandList;
+        while (curr) {
+            io->debug_print("  %s\r\n", curr->command);
+            curr = curr->next;
+        }
+        io->debug_print("\r\n");
+    }
 }
 
 /**
