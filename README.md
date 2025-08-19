@@ -2,6 +2,8 @@
 
 This project provides a console command handler for embedded systems, designed to be used with UART for receiving and sending commands. The handler is abstracted to allow for easy integration with different platforms and MCUs.
 
+https://docs.silabs.com/gecko-platform/latest/platform-service/cli
+
 ## Features
 
 - Command registration and execution
